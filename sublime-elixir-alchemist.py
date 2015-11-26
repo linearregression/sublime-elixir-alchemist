@@ -17,15 +17,13 @@ def plugin_loaded():
     log("Plugin Loaded")
     setup_home_directory()
     setup_home()
-    load_alchemist()
 
 
 def load_alchemist():
     global _alchemist_session
     if _alchemist_session is None and _project_home is not None:
-        log("Loading Alchemist")
         _alchemist_session = AlchemistSession()
-        log("Alchemist Loaded")
+        log("Alchemist Session Started")
     return _alchemist_session
 
 
@@ -37,6 +35,7 @@ def fix_path():
     _environ['PATH'] = os.environ["PATH"] + ":/usr/local/bin"
     os.environ.clear()
     os.environ.update(_environ)
+
 
 def setup_home():
     global _home
@@ -75,30 +74,14 @@ def is_elixir_file(filename):
     return filename and filename.endswith(('.ex', '.exs'))
 
 
-# def find_aliases(view):
-#     aliases = {}
-#     for region in view.find_all('^[\s\t]*?alias\s.+?$'):
-#         alias_line = view.substr(region).strip()
-#         for (pattern, replacer) in [
-#             (r'^alias (.+?)\.(.+?)$', lambda prefix, alias: '%s.%s' % (prefix, alias)),
-#             (r'^alias (.+?), as: (.+)$', lambda prefix, _: prefix),
-#         ]:
-#             matches = re.findall(pattern, alias_line)
-#             if matches:
-#                 [(prefix, alias)] = matches
-#                 aliases[alias] = replacer(prefix, alias)
-#                 break
-#     return aliases
-
-
 class AlchemistSession(object):
     def __init__(self):
         is_posix = 'posix' in sys.builtin_module_names
         alchemist_run_path = os.path.join(_alchemist_home, "run.exs")
         args = [_elixir_bin, alchemist_run_path, "dev"]
-        self._process = Popen(args, stdin=PIPE, stdout=PIPE, bufsize=1, stderr=PIPE,
-                              close_fds=is_posix, universal_newlines=True,
-                              cwd=_project_home)
+        self._process = Popen(args, stdin=PIPE, stdout=PIPE, bufsize=1,
+                              stderr=PIPE, close_fds=is_posix,
+                              universal_newlines=True, cwd=_project_home)
         self._queue = Queue()
         self._thread = Thread(target=self._enqueue_output,
                               args=(self._process.stdout, self._queue))
@@ -114,7 +97,8 @@ class AlchemistSession(object):
         command = 'COMP {{ "{0:s}", [ context: Elixir, imports: [Enum], ' \
                   'aliases: [{{MyList, List}}] ] }}\n'.format(evaluated_word)
         self._process.stdin.write(command)
-        return [[c, c.split("/")[0] + "()"] for c in self._get_result()]
+        result = [c for c in self._get_result() if not c.endswith(".")]
+        return [[c, c.split("/")[0]] for c in result]
 
     def _get_result(self):
         result = ''
@@ -124,7 +108,7 @@ class AlchemistSession(object):
                 result += line
             except Empty:
                 pass
-        commands = result.split("\n")[0:-2]
+        commands = sorted(result.split("\n")[0:-2])
         return commands
 
     def _enqueue_output(self, stdout, queue):
@@ -136,25 +120,15 @@ class AlchemistSession(object):
 class AutoComplete(sublime_plugin.EventListener):
     def on_query_completions(self, view, prefix, locations):
         if is_elixir_file(view.file_name()):
+            load_alchemist()
             lines = view.lines(view.visible_region())
             line_of_file = None
             line_index = None
-            actual_word = prefix
             for line in lines:
                 if line.a <= locations[0] <= line.b:
                     line_of_file = view.substr(line)
                     line_index = locations[0] - line.a
-            if line_of_file.count(prefix) == 1:
-                beginning_of_word = line_of_file.find(prefix)
-                if line_of_file[beginning_of_word - 1 == "."]:
-                    for line in line_of_file.split(" "):
-                        if line.find("." + prefix) != -1:
-                            actual_word = line
-            else:
-                pass
-            print(_alchemist_session.get_suggestions(actual_word))
+            actual_word = line_of_file[0:line_index].split(" ")[-1]
             return _alchemist_session.get_suggestions(actual_word)
         else:
             return None
-
-
