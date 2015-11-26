@@ -86,7 +86,6 @@ class AlchemistSession(object):
         self._thread = Thread(target=self._enqueue_output,
                               args=(self._process.stdout, self._queue))
         self._thread.daemon = True
-        # print(self._process.stderr.readline())
         self._thread.start()
 
     def close(self):
@@ -94,11 +93,15 @@ class AlchemistSession(object):
             self._process.terminate()
 
     def get_suggestions(self, evaluated_word):
-        command = 'COMP {{ "{0:s}", [ context: Elixir, imports: [Enum], ' \
-                  'aliases: [{{MyList, List}}] ] }}\n'.format(evaluated_word)
-        self._process.stdin.write(command)
-        result = [c for c in self._get_result() if not c.endswith(".")]
-        return [[c, c.split("/")[0]] for c in result]
+        if '"' in evaluated_word or "'" in evaluated_word:
+            return None
+        else:
+            command = 'COMP {{ "{0:s}", [ context: Elixir, imports: [], ' \
+                      'aliases: [] ] }}\n'.format(
+                          evaluated_word)
+            self._process.stdin.write(command)
+            result = [c for c in self._get_result() if not c.endswith(".")]
+            return [[c, c.split("/")[0]] for c in result]
 
     def _get_result(self):
         result = ''
