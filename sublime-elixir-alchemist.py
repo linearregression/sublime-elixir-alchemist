@@ -1,4 +1,5 @@
 import os
+import re
 import sublime, sublime_plugin
 import sys
 from queue import Queue, Empty
@@ -10,6 +11,8 @@ _project_home = None
 _alchemist_home = None
 _home = None
 _elixir_bin = None
+# needs to be configurable
+_elixir_source = '/opt/local/elixir-1.1.1/lib/elixir/lib'
 
 
 def plugin_loaded():
@@ -160,7 +163,7 @@ class AutoComplete(sublime_plugin.EventListener):
             return None
 
 
-class FindDefinitionCommand(sublime_plugin.TextCommand):
+class FindElixirDefinitionCommand(sublime_plugin.TextCommand):
     """"""
     def run(self, edit):
         view = sublime.active_window().active_view()
@@ -178,8 +181,14 @@ class FindDefinitionCommand(sublime_plugin.TextCommand):
                     payload = "nil," + full_word
             else:
                 payload = full_word.replace(".", ",")
-            file_name = _alchemist_session.get_definitions(payload)
-            print(file_name)
+            file_name = _alchemist_session.get_definitions(payload)[0]
+            final_file_name = None
+            if file_name.startswith("/private/tmp"):
+                regex = r'/private/tmp/.+/lib'
+                final_file_name = re.sub(regex, _elixir_source, file_name)
+            else:
+                final_file_name = file_name
+            sublime.active_window().open_file(final_file_name)
             # lookup definition in file, lookup definition in local file if
             # file isn't found.
         else:
