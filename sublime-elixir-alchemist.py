@@ -74,6 +74,17 @@ def is_elixir_file(filename):
     return filename and filename.endswith(('.ex', '.exs'))
 
 
+def get_pre_word(view, region):
+    lines = view.lines(view.visible_region())
+    line_of_file = None
+    line_index = None
+    for line in lines:
+        if line.a <= region <= line.b:
+            line_of_file = view.substr(line)
+            line_index = region - line.a
+    return line_of_file[0:line_index].split(" ")[-1]
+
+
 class AlchemistSession(object):
     def __init__(self):
         is_posix = 'posix' in sys.builtin_module_names
@@ -97,13 +108,21 @@ class AlchemistSession(object):
             return None
         else:
             command = 'COMP {{ "{0:s}", [ context: Elixir, imports: [], ' \
-                      'aliases: [] ] }}\n'.format(
-                          evaluated_word)
+                      'aliases: [] ] }}\n'.format(evaluated_word)
             self._process.stdin.write(command)
-            result = [c for c in self._get_result() if not c.endswith(".")]
+            result = [c for c in self._get_comp_result() if not c.endswith(".")]
             return [[c, c.split("/")[0]] for c in result]
 
-    def _get_result(self):
+    def get_definitions(self, evaluated_word):
+        if '"' in evaluated_word or "'" in evaluated_word:
+            return None
+        else:
+            command = 'DEFL {{ "{0:s}", [ context: Elixir, imports: [], ' \
+                      'aliases: [] ] }}\n'.format(evaluated_word)
+            self._process.stdin.write(command)
+            return self._get_defl_result()
+
+    def _get_comp_result(self):
         result = ''
         while not result.endswith('END-OF-COMP\n'):
             try:
@@ -113,6 +132,17 @@ class AlchemistSession(object):
                 pass
         commands = sorted(result.split("\n")[0:-2])
         return commands
+
+    def _get_defl_result(self):
+        result = ''
+        while not result.endswith('END-OF-DEFL\n'):
+            try:
+                line = self._queue.get_nowait()
+                result += line
+            except Empty:
+                pass
+        definitions = sorted(result.split("\n")[0:-2])
+        return definitions
 
     def _enqueue_output(self, stdout, queue):
         for line in iter(stdout.readline, b''):
@@ -124,14 +154,33 @@ class AutoComplete(sublime_plugin.EventListener):
     def on_query_completions(self, view, prefix, locations):
         if is_elixir_file(view.file_name()):
             load_alchemist()
-            lines = view.lines(view.visible_region())
-            line_of_file = None
-            line_index = None
-            for line in lines:
-                if line.a <= locations[0] <= line.b:
-                    line_of_file = view.substr(line)
-                    line_index = locations[0] - line.a
-            actual_word = line_of_file[0:line_index].split(" ")[-1]
-            return _alchemist_session.get_suggestions(actual_word)
+            pre_word = get_pre_word(view, locations[0])
+            return _alchemist_session.get_suggestions(pre_word)
+        else:
+            return None
+
+
+class FindDefinitionCommand(sublime_plugin.TextCommand):
+    """"""
+    def run(self, edit):
+        view = sublime.active_window().active_view()
+        if is_elixir_file(view.file_name()):
+            load_alchemist()
+            word_boundaries = view.word(view.sel()[0])
+            actual_word = view.substr(word_boundaries)
+            pre_word = get_pre_word(view, word_boundaries.a)
+            full_word = pre_word + actual_word
+            payload = None
+            if full_word.find(".") == -1:
+                if full_word[0].isupper():
+                    payload = full_word + ",nil"
+                else:
+                    payload = "nil," + full_word
+            else:
+                payload = full_word.replace(".", ",")
+            file_name = _alchemist_session.get_definitions(payload)
+            print(file_name)
+            # lookup definition in file, lookup definition in local file if
+            # file isn't found.
         else:
             return None
