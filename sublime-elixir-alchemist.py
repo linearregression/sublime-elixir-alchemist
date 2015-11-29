@@ -182,14 +182,17 @@ class FindElixirDefinitionCommand(sublime_plugin.TextCommand):
             else:
                 payload = full_word.replace(".", ",")
             file_name = _alchemist_session.get_definitions(payload)[0]
-            final_file_name = None
-            if file_name.startswith("/private/tmp"):
-                regex = r'/private/tmp/.+/lib'
-                final_file_name = re.sub(regex, _elixir_source, file_name)
+            if file_name != '':
+                final_file_name = None
+                if file_name.startswith("/private/tmp"):
+                    regex = r'/private/tmp/.+/lib'
+                    final_file_name = re.sub(regex, _elixir_source, file_name)
+                else:
+                    final_file_name = file_name
+                sublime.active_window().open_file(final_file_name)
+                # lookup definition in file, lookup definition in local file if
+                # file isn't found.
             else:
-                final_file_name = file_name
-            sublime.active_window().open_file(final_file_name)
-            # lookup definition in file, lookup definition in local file if
-            # file isn't found.
+                return None
         else:
             return None
